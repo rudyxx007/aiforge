@@ -186,5 +186,5 @@ This project is developed as part of a **Cloud Native Applications and DevOps** 
 
 **⭐ If you find this project helpful, please give it a star on GitHub!**
 
-**📧 Contact:** [your.email@example.com](mailto:your.email@example.com)
-**🐙 GitHub:** [https://github.com/yourusername](https://github.com/yourusername)
+**📧 Contact:** [rudyop007@gmail.com](mailto:rudyop007@gmail.com)
+**🐙 GitHub:** [https://github.com/rudyxx007](https://github.com/rudyxx007)
