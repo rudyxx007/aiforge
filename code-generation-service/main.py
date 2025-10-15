@@ -1,10 +1,16 @@
 from fastapi import FastAPI
+from pydantic import BaseModel
 
-app = FastAPI(title="Code Generation Service", version="1.0.0")
+app = FastAPI(title="Code Generation Service")
 
-@app.post("/api/generate/generate")
-def generate():
-    return {"message": "Generate endpoint - To be implemented"}
+class GenerateRequest(BaseModel):
+    prompt: str
+
+@app.post("/api/generate")
+def generate_code(req: GenerateRequest):
+    # Dummy code generation
+    generated_code = f"# Generated code based on prompt: {req.prompt}"
+    return {"code": generated_code}
 
 @app.get("/api/generate/health")
 def health():
