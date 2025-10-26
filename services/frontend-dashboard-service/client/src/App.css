@@ -43,3 +43,30 @@ button {
 button:hover {
   background-color: #4fa8c2;
 }
+
+.project-controls {
+  margin-top: 15px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #444;
+}
+
+.project-controls select,
+.project-controls input {
+  padding: 5px;
+  margin-right: 10px;
+}
+
+.auth-form {
+    margin-top: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #444;
+}
+
+.auth-form input {
+    padding: 8px;
+    margin-right: 10px;
+}
+
+.auth-form button {
+    padding: 8px 12px;
+}

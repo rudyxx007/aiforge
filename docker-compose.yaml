@@ -10,64 +10,56 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432" # Expose DB port to your laptop for debugging
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - "5432:5432"
+    # No healthcheck here for now
 
   # --- 2. Auth Service (Python) ---
   auth-service:
     build: ./services/auth-service
     container_name: auth-service
-    ports:
-      - "8001:8000" # Expose on http://localhost:8001
-    env_file: ./.env # Load all secrets
-    depends_on:
-      postgres-db:
-        condition: service_healthy # Wait for DB to be ready
+    env_file: ./.env
+    depends_on: # Simplified depends_on
+      - postgres-db
+    # No healthcheck
 
   # --- 3. Project Service (Python) ---
   project-service:
     build: ./services/project-service
     container_name: project-service
-    ports:
-      - "8002:8000" # Expose on http://localhost:8002
     env_file: ./.env
-    depends_on:
-      postgres-db:
-        condition: service_healthy
+    depends_on: # Simplified depends_on
+      - postgres-db
+    # No healthcheck
 
   # --- 4. AI Core Service (Python) ---
   ai-core-service:
     build: ./services/ai-core-service
     container_name: ai-core-service
-    ports:
-      - "8003:8000" # Expose on http://localhost:8003
     env_file: ./.env
+    # No healthcheck
 
   # --- 5. Analysis Service (Python) ---
   analysis-service:
     build: ./services/analysis-service
     container_name: analysis-service
-    ports:
-      - "8004:8000" # Expose on http://localhost:8004
     env_file: ./.env
-    depends_on:
+    depends_on: # Simplified depends_on
       - ai-core-service
+    # No healthcheck
 
   # --- 6. Frontend Service (Node.js + React) ---
   frontend-service:
     build: ./services/frontend-dashboard-service
     container_name: frontend-service
+    env_file: ./.env
     ports:
-      - "3000:5000" # Expose on http://localhost:3000
-    depends_on:
+      - "3000:5000"
+    depends_on: # Simplified depends_on list
       - auth-service
       - project-service
       - analysis-service
+      - ai-core-service
+    # No healthcheck
 
-# Define the persistent volume for our database
 volumes:
   postgres_data:
