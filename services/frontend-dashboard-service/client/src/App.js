@@ -4,55 +4,64 @@ import axios from 'axios';
 import './App.css';
 
 function App() {
-  const [code, setCode] = useState("# Write your Python code here\ndef hello():\n  print('Hello World')");
+  // --- State Variables ---
+  const [code, setCode] = useState("# Write your Python code here...");
   const [prompt, setPrompt] = useState("a flask server");
   const [linting, setLinting] = useState("Linting results will appear here.");
   const [suggestions, setSuggestions] = useState("AI suggestions will appear here.");
-  const [token, setToken] = useState(localStorage.getItem('authToken')); // Load token from browser storage
-  const [username, setUsername] = useState(''); // For login form
-  const [password, setPassword] = useState(''); // For login form
-  const [projects, setProjects] = useState([]); // List of user's projects
-  const [currentProjectId, setCurrentProjectId] = useState(''); // ID of the selected project
-  const [newProjectName, setNewProjectName] = useState(''); // For create project form
-  const [authError, setAuthError] = useState(''); // To display login/register errors
-  const [projectError, setProjectError] = useState(''); // To display project errors
+  const [token, setToken] = useState(localStorage.getItem('authToken')); 
+  const [username, setUsername] = useState(''); 
+  const [password, setPassword] = useState(''); 
+  const [projects, setProjects] = useState([]); 
+  const [currentProjectId, setCurrentProjectId] = useState(''); 
+  const [newProjectName, setNewProjectName] = useState(''); 
+  const [authError, setAuthError] = useState(''); 
+  const [projectError, setProjectError] = useState(''); 
 
-  // --- useEffect Hook ---
-  // This runs once when the component first loads
+  // --- useEffect Hook (Runs Once on Load) ---
   useEffect(() => {
     const storedToken = localStorage.getItem('authToken');
     if (storedToken) {
-      setToken(storedToken); // Set token state if found in storage
-      fetchProjects(storedToken); // Fetch projects using the stored token
+      setToken(storedToken); 
+      // Use await here to ensure projects are fetched before potential subsequent actions
+      // Although in this simple case, it might not be strictly necessary
+      const fetchInitialProjects = async () => {
+          await fetchProjects(storedToken);
+      };
+      fetchInitialProjects();
     } else {
       setCode('# Please log in or register to manage projects.');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps 
-  }, []); // Empty dependency array means run only once on mount
-  // --- END useEffect Hook ---
+  }, []); // Empty array ensures this runs only once
 
-  // --- API Handlers ---
+  // --- API Call Functions ---
 
-  // Function to handle user registration
-  const handleRegister = async (e) => {
-    e.preventDefault(); // Prevent default form submission
-    setAuthError(''); // Clear previous errors
+  const fetchProjects = async (authToken) => {
+    if (!authToken) return; 
+    setProjectError('');
     try {
-      await axios.post('/api/auth/register', { username, password });
-      // Automatically log in after successful registration
-      handleLogin(e); 
+      const response = await axios.get('/api/projects/projects', {
+        // FIX: Added backticks (`) for template literal
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      setProjects(response.data || []); 
     } catch (error) {
-      console.error('Registration failed:', error);
-      setAuthError((error.response && error.response.data && error.response.data.detail) ? error.response.data.detail : 'Registration failed');
+      console.error('Failed to fetch projects:', error);
+      // FIX: Ensured robust error message handling
+      setProjectError((error.response && error.response.data && error.response.data.detail) 
+                       ? error.response.data.detail : 'Could not load projects.');
+      // Use optional chaining safely here as it's just reading status
+      if (error.response?.status === 401) { 
+           handleLogout(); 
+      }
     }
   };
 
-  // Function to handle user login
   const handleLogin = async (e) => {
-    e.preventDefault(); // Prevent default form submission
-    setAuthError(''); // Clear previous errors
+    e.preventDefault(); 
+    setAuthError(''); 
     try {
-      // NOTE: Login endpoint expects form data, not JSON
       const formData = new URLSearchParams();
       formData.append('username', username);
       formData.append('password', password);
@@ -60,70 +69,81 @@ function App() {
       const response = await axios.post('/api/auth/login', formData, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
-
+      
       const receivedToken = response.data.access_token;
-      localStorage.setItem('authToken', receivedToken); // Save token to browser storage
-      setToken(receivedToken); // Update state
-      setUsername(''); // Clear form
-      setPassword(''); // Clear form
-      fetchProjects(receivedToken); // Fetch projects immediately after login
+      localStorage.setItem('authToken', receivedToken); 
+      setToken(receivedToken); // Update state - THIS TRIGGERS RE-RENDER
+
+      // FIX: Removed redundant second call to fetchProjects
+      await fetchProjects(receivedToken); // Fetch projects immediately with the new token
+
+      setUsername(''); 
+      setPassword(''); 
+      
     } catch (error) {
       console.error('Login failed:', error);
-      localStorage.removeItem('authToken'); // Clear any old token
+      localStorage.removeItem('authToken'); 
       setToken(null);
-      setAuthError((error.response && error.response.data && error.response.data.detail) ? error.response.data.detail : 'Login failed');
+      // FIX: Ensured robust error message handling
+      setAuthError((error.response && error.response.data && error.response.data.detail) 
+                   ? error.response.data.detail : 'Login failed');
     }
   };
 
-  // Function to handle logout
-  const handleLogout = () => {
-    localStorage.removeItem('authToken'); // Remove token from storage
-    setToken(null); // Clear state
-    setProjects([]); // Clear projects list
-    setCurrentProjectId(''); // Clear selected project
-    setCode('# Logged out. Please log in to manage projects.'); // Update editor
-  };
-
-  // Function to fetch user's projects
-  const fetchProjects = async (authToken) => {
-    if (!authToken) return; // Don't fetch if not logged in
-    setProjectError('');
+  const handleRegister = async (e) => {
+    e.preventDefault(); 
+    setAuthError(''); 
     try {
-      const response = await axios.get('/api/projects/projects', {
-        headers: { Authorization: 'Bearer ${authToken}' }, // Add the token!
-      });
-      setProjects(response.data || []); // Update projects state
+      await axios.post('/api/auth/register', { username, password });
+      // Automatically log in after successful registration
+      // handleLogin will set the token and fetch projects
+      handleLogin(e); 
     } catch (error) {
-      console.error('Failed to fetch projects:', error);
-      setProjectError((error.response && error.response.data && error.response.data.detail) ? error.response.data.detail : 'Could not load projects.');
-      if (error.response?.status === 401) { // If token is invalid/expired
-          handleLogout(); // Log the user out
-      }
+      console.error('Registration failed:', error);
+      // FIX: Ensured robust error message handling
+      setAuthError((error.response && error.response.data && error.response.data.detail) 
+                   ? error.response.data.detail : 'Registration failed');
     }
   };
 
-  // Function to create a new project
+  const handleLogout = () => {
+    localStorage.removeItem('authToken'); 
+    setToken(null); 
+    setProjects([]); 
+    setCurrentProjectId(''); 
+    setCode('# Logged out. Please log in to manage projects.'); 
+  };
+
   const handleCreateProject = async () => {
-    if (!token || !newProjectName) return; // Need token and name
+    // Use the 'token' state variable here, as it should be up-to-date
+    if (!token || !newProjectName) return; 
     setProjectError('');
     try {
       await axios.post('/api/projects/projects', 
-        { name: newProjectName, description: '' }, // Send project data
-        { headers: { Authorization: `Bearer ${token}` } } // Add the token!
+        { name: newProjectName, description: '' }, 
+        // FIX: Added backticks (`) for template literal
+        { headers: { Authorization: `Bearer ${token}` } } 
       );
-      setNewProjectName(''); // Clear input form
-      fetchProjects(token); // Refresh the project list
+      setNewProjectName(''); 
+      await fetchProjects(token); // Refresh project list using current token state
     } catch (error) {
       console.error('Failed to create project:', error);
-      setProjectError(error.response?.data?.detail || 'Could not create project.');
-      if (error.response?.status === 401) {
-          handleLogout();
+      // FIX: Ensured robust error message handling
+      setProjectError((error.response && error.response.data && error.response.data.detail) 
+                       ? error.response.data.detail : 'Could not create project.');
+       if (error.response?.status === 401) {
+           handleLogout();
       }
     }
   };
 
   const handleAnalyze = () => {
-    // Note: We call our proxy server, not the microservice directly
+    // Check if logged in before analyzing (optional, but good practice)
+    if (!token) {
+        setLinting("Please log in to analyze code.");
+        setSuggestions("");
+        return;
+    }
     axios.post('/api/analysis/analyze', { code })
       .then(response => {
         setLinting(response.data.linting_results);
@@ -132,54 +152,58 @@ function App() {
       .catch(error => {
         console.error('Error analyzing code:', error);
         setLinting("Error analyzing code.");
-        setSuggestions(error.response ? error.response.data.detail : "Connection error");
+        setSuggestions((error.response && error.response.data && error.response.data.detail) 
+                       ? error.response.data.detail : "Connection error");
       });
   };
 
   const handleGenerate = () => {
-    // Note: The prompt from the input box is used here
+    // Check if logged in before generating
+    if (!token) {
+        setCode("// Please log in to generate code.");
+        return;
+    }
     axios.post('/api/ai/generate', { contents: [
-      { role: 'user', content: prompt } // Send a simple contents array with the user prompt
+      { role: 'user', content: prompt } 
     ]})
       .then(response => {
-        // SUCCESS: The AI Core Service returns JSON { "code": "..." }
-        // We set the editor content directly from the 'code' key.
         setCode(response.data.code); 
       })
       .catch(error => {
         console.error('Error generating code:', error);
         let errorMessage = "Generation Error: Could not parse response.";
         if (error.response && error.response.data && error.response.data.detail) {
-          // If the AI Service returns a structured error (like 500 or 400)
-          errorMessage = `Error ${error.response.status}: ${error.response.data.detail}`;
+          // FIX: Added backticks (`) for template literal
+          errorMessage = `Error  ${error.response.status}: ${error.response.data.detail}`;
         } else if (error.message) {
-            // General connection/network error
+            // FIX: Added backticks (`) for template literal
             errorMessage = `Network Error: ${error.message}`;
         }
-
-        // Display the cleaned error message in the editor
+        // FIX: Added backticks (`) for template literal
         setCode(`// ${errorMessage}\n// Check browser console for more details.`);
       });
   };
 
+// --- JSX Rendering ---
   return (
     <div className="App">
-      {/* --- UPDATED HEADER --- */}
       <header className="App-header">
         <h1>Cloud-Native AI Forge</h1>
 
-        {/* Show Project controls only if logged in */}
+        {/* Conditional Rendering: Show controls if logged in, else show auth form */}
         {token ? (
+          // --- LOGGED IN VIEW ---
           <div className="project-controls">
             {/* Project Selector Dropdown */}
-            <select 
-              value={currentProjectId} 
+            <select
+              value={currentProjectId}
               onChange={(e) => {
-                  setCurrentProjectId(e.target.value);
-                  // TODO: In a real app, you'd load the code for the selected project here
-                  // For now, just clear the editor or show a message
-                  const selectedProj = projects.find(p => p.id === parseInt(e.target.value));
-                  setCode(`# Project selected: ${selectedProj ? selectedProj.name : 'None'}\n# Code loading/saving not implemented yet.`);
+                  const newId = e.target.value;
+                  setCurrentProjectId(newId);
+                  const selectedProject = projects.find(p => p.id === parseInt(newId));
+                  const projectName = selectedProject ? selectedProject.name : 'None';
+                  // Use backticks for the template literal string
+                  setCode(`# Project selected: ${projectName}\n# Code loading/saving not implemented yet.`);
               }}
             >
               <option value="">-- Select Project --</option>
@@ -190,56 +214,59 @@ function App() {
               ))}
             </select>
 
-            {/* Create New Project */}
-            <input 
-              type="text" 
-              placeholder="New project name" 
-              value={newProjectName} 
-              onChange={(e) => setNewProjectName(e.target.value)} 
+            {/* Create New Project Input and Button */}
+            <input
+              type="text"
+              placeholder="New project name"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
               style={{ marginLeft: '10px' }}
             />
             <button onClick={handleCreateProject}>+ Create</button>
+            {/* Display project errors */}
             {projectError && <span style={{ color: 'red', marginLeft: '10px' }}>{projectError}</span>}
-
 
             {/* Logout Button */}
             <button onClick={handleLogout} style={{ marginLeft: '20px' }}>Logout</button>
           </div>
         ) : (
-          // --- LOGIN/REGISTER FORM (Shown when logged out) ---
+          // --- LOGGED OUT VIEW ---
           <div className="auth-form">
-             <form onSubmit={handleLogin}> {/* Can trigger login on Enter */}
-               <input 
-                 type="text" 
-                 placeholder="Username" 
-                 value={username} 
-                 onChange={(e) => setUsername(e.target.value)} 
-                 required 
+             <form onSubmit={handleLogin}> {/* Form triggers login on submit */}
+               <input
+                 type="text"
+                 placeholder="Username"
+                 value={username}
+                 onChange={(e) => setUsername(e.target.value)}
+                 required
                />
-               <input 
-                 type="password" 
-                 placeholder="Password" 
-                 value={password} 
-                 onChange={(e) => setPassword(e.target.value)} 
-                 required 
+               <input
+                 type="password"
+                 placeholder="Password"
+                 value={password}
+                 onChange={(e) => setPassword(e.target.value)}
+                 required
                />
                <button type="submit">Login</button>
                <button type="button" onClick={handleRegister} style={{ marginLeft: '10px' }}>Register</button>
+               {/* Display auth errors */}
                {authError && <p style={{ color: 'red', marginTop: '5px' }}>{authError}</p>}
              </form>
           </div>
         )}
-      </header>
-      {/* --- END UPDATED HEADER --- */}
+      </header> {/* Closing header tag was potentially misplaced before */}
 
-
-      {/* --- Existing Container with Editor and AI Panels --- */}
-      {/* Only show editor/AI tools if logged in */}
+      {/* --- Main Content Area --- */}
+      {/* Conditional Rendering for Editor/AI Panels */}
       {token ? (
+         // --- LOGGED IN VIEW for main content ---
          <div className="container">
            {/* Left Panel: Code Editor */}
            <div className="panel">
-             <h3>Code Editor {currentProjectId ? `(Project ID: ${currentProjectId})` : ''}</h3>
+             {/* Use JSX interpolation correctly */}
+             <h3>
+                Code Editor {currentProjectId ? `(Project ID: ${currentProjectId})` : ''}
+             </h3>
              <Editor
                height="50vh"
                defaultLanguage="python"
@@ -253,30 +280,27 @@ function App() {
            {/* Right Panel: AI & Analysis */}
            <div className="panel">
              <h3>Code Generation</h3>
-             <input 
-               type="text" 
+             <input
+               type="text"
                value={prompt}
                onChange={(e) => setPrompt(e.target.value)}
                placeholder="Enter a prompt (e.g., 'a flask server')"
              />
              <button onClick={handleGenerate}>Generate Code</button>
-
              <hr />
-
              <h3>Analysis Results</h3>
              <h4>Linting (Flake8):</h4>
              <pre>{linting}</pre>
              <h4>AI Suggestions:</h4>
              <pre>{suggestions}</pre>
            </div>
-         </div>
+         </div> // Closing container div
       ) : (
+         // --- LOGGED OUT VIEW for main content ---
          <p style={{marginTop: '50px'}}>Please log in or register to use the AI Forge.</p>
       )}
-      {/* --- END Existing Container --- */}
-
-    </div>
-  );
+    </div> // Closing App div
+  ); // Closing return statement
 } // End of App function
 
 export default App;
