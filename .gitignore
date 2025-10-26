@@ -2,13 +2,13 @@
 
 
 # Services
-auth-service/
+authentication-service/
 code-analysis-service/
 code-generation-service/
 dashboard/
 database-service/
 notification-service/
-project-service/
+project-management-service/
 
 # Documentation files
 API_design.md
