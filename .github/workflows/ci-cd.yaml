@@ -45,6 +45,18 @@ jobs:
       # 5. Build, Scan, and Push each service's Docker Image
       - name: Build, Scan, Push Services
         run: |
+
+          # --- DEBUG: List top-level directory contents ---
+          echo "Listing workspace root: ${{ github.workspace }}"
+          ls -la ${{ github.workspace }}
+          echo "--- End listing workspace root ---"
+
+          # --- DEBUG: List contents of the 'services' directory ---
+          echo "Listing services directory: ${{ github.workspace }}/services"
+          ls -la ${{ github.workspace }}/services
+          echo "--- End listing services directory ---"
+          # --- END DEBUG ---
+          
           IMAGE_TAG=${{ github.sha }} # Unique tag based on commit hash
 
           # Loop through each service defined in SERVICE_NAMES
