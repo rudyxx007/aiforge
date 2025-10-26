@@ -1,1 +1,26 @@
 .env
+
+
+# Services
+auth-service/
+code-analysis-service/
+code-generation-service/
+dashboard/
+database-service/
+notification-service/
+project-service/
+
+# Documentation files
+API_design.md
+SERVICE_ENDPOINTS.md
+SETUP.md
+TECH_STACK.md
+WORKFLOW.md
+
+# Other common ignores (optional but recommended)
+.env
+*.log
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
