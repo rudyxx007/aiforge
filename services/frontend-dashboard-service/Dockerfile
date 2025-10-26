@@ -14,8 +14,14 @@ COPY client/ ./client/
 # Build the static React app
 RUN cd client && npm run build
 
-# --- Stage 2: Build the Node.js Server ---
+# --- Stage 2: Build the Node.js Server (Final Image) ---
 FROM node:18-slim
+
+# --- FIX: PATCH BASE IMAGE VULNERABILITIES ---
+# Run update and upgrade to pull in any available security patches 
+# for base packages like zlib1g. This is the cleaner DevSecOps fix.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+# --- END FIX ---
 
 WORKDIR /app
 
