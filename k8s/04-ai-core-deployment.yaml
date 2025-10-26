@@ -1,0 +1,51 @@
+# --- AI Core Service Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-core-deployment
+  labels:
+    app: ai-core-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-core-service
+  template:
+    metadata:
+      labels:
+        app: ai-core-service
+    spec:
+      # No special serviceAccount needed unless accessing other GCP APIs
+      containers:
+      - name: ai-core-service
+        image: PLACEHOLDER_REGION-docker.pkg.dev/PLACEHOLDER_PROJECT_ID/aiforge-services/ai-core-service:PLACEHOLDER_TAG
+        ports:
+        - containerPort: 8000
+        env:
+        # Load Gemini API Key from the K8s Secret
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-api-key-secret # Matches the name in 01-ai-secret.yaml
+              key: GEMINI_API_KEY        # Matches the key within that secret
+        readinessProbe:
+          httpGet:
+            path: /health # Requires a /health endpoint in ai-core-service
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          timeoutSeconds: 5
+---
+# --- AI Core Service ClusterIP (Internal DNS Name: "ai-core-service") ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-core-service
+spec:
+  selector:
+    app: ai-core-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP

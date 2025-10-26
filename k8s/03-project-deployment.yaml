@@ -1,0 +1,90 @@
+# --- Project Service Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: project-deployment
+  labels:
+    app: project-service # Changed label
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: project-service # Changed label
+  template:
+    metadata:
+      labels:
+        app: project-service # Changed label
+    spec:
+      serviceAccountName: app-workload-identity-sa # Use the same secure SA
+      containers:
+      # --- Main Project Service Container ---
+      - name: project-service # Changed name
+        image: PLACEHOLDER_REGION-docker.pkg.dev/PLACEHOLDER_PROJECT_ID/aiforge-services/project-service:PLACEHOLDER_TAG # Changed image name
+        ports:
+        - containerPort: 8000
+        env:
+        # Load DB Credentials from the K8s Secret
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: DB_PASSWORD
+        # DATABASE URL for SQLAlchemy (Connects via Unix socket)
+        - name: DATABASE_URL
+          value: "postgresql+psycopg2://$(DB_USER):$(DB_PASSWORD)@/aiforge-main-db?host=/cloudsql/PLACEHOLDER_PROJECT_ID:PLACEHOLDER_REGION:aiforge-db-instance"
+        # Load JWT Secret Key (Needs to match Auth service for validation)
+        - name: JWT_SECRET_KEY
+          value: "my-super-secret-random-key-for-jwt-32-chars-longer-is-better" # Must match auth-service
+        - name: ALGORITHM
+          value: "HS256"
+        # Readiness Probe
+        readinessProbe:
+          httpGet:
+            path: /health # Requires a /health endpoint in project-service
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+        # Mount the shared volume for the Cloud SQL socket
+        volumeMounts:
+          - name: cloudsql-socket-volume
+            mountPath: /cloudsql
+            readOnly: false
+
+      # --- Cloud SQL Auth Proxy Sidecar Container ---
+      - name: cloudsql-proxy
+        image: gcr.io/cloudsql-docker/gce-proxy:latest
+        args:
+          - "--structured-logs"
+          - "--private-ip"
+          - "--unix-socket=/cloudsql"
+          - "PLACEHOLDER_PROJECT_ID:PLACEHOLDER_REGION:aiforge-db-instance"
+        securityContext:
+          runAsNonRoot: true
+        volumeMounts:
+          - name: cloudsql-socket-volume
+            mountPath: /cloudsql
+            readOnly: false
+
+      volumes:
+        - name: cloudsql-socket-volume
+          emptyDir: {}
+---
+# --- Project Service ClusterIP (Internal DNS Name: "project-service") ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: project-service # Changed name
+spec:
+  selector:
+    app: project-service # Changed label
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP

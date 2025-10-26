@@ -1,0 +1,44 @@
+# --- Analysis Service Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analysis-deployment
+  labels:
+    app: analysis-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: analysis-service
+  template:
+    metadata:
+      labels:
+        app: analysis-service
+    spec:
+      containers:
+      - name: analysis-service
+        image: PLACEHOLDER_REGION-docker.pkg.dev/PLACEHOLDER_PROJECT_ID/aiforge-services/analysis-service:PLACEHOLDER_TAG
+        ports:
+        - containerPort: 8000
+        # No special ENV needed unless you make AI_CORE_URL configurable
+        readinessProbe:
+          httpGet:
+            path: /health # Requires a /health endpoint in analysis-service
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          timeoutSeconds: 5
+---
+# --- Analysis Service ClusterIP (Internal DNS Name: "analysis-service") ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analysis-service
+spec:
+  selector:
+    app: analysis-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP

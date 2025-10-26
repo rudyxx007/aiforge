@@ -1,0 +1,149 @@
+name: CI/CD Pipeline - Build, Scan, Deploy to GKE
+
+# --- TRIGGERS ---
+on:
+  push:
+    branches:
+      - main # Trigger on pushes to the main branch
+  workflow_dispatch: # Allows manual triggering from GitHub UI
+
+# --- ENVIRONMENT VARIABLES ---
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ secrets.GCP_REGION }}
+  GKE_CLUSTER: aiforge-cluster
+  GAR_LOCATION: ${{ secrets.GCP_REGION }}-docker.pkg.dev
+  GAR_REPOSITORY: aiforge-services
+  SERVICE_NAMES: "auth-service project-service ai-core-service analysis-service frontend-service"
+
+# --- JOBS ---
+jobs:
+  # --- JOB 1: Build, Scan, Push Docker Images ---
+  build-scan-push:
+    name: Build, Scan, and Push Images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GAR
+        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }} --quiet
+
+      - name: Build, Scan, Push Services
+        run: |
+          IMAGE_TAG=${{ github.sha }} # Use unique commit hash as tag
+
+          for SERVICE in ${{ env.SERVICE_NAMES }}; do
+            echo "--- Processing service: $SERVICE ---"
+            SERVICE_PATH="./services/$SERVICE"
+            IMAGE_NAME="${{ env.GAR_LOCATION }}/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/$SERVICE"
+
+            IS_PYTHON=false
+            if [[ -f "$SERVICE_PATH/requirements.txt" ]]; then
+              IS_PYTHON=true
+            fi
+
+            # --- CI: SAST ---
+            if $IS_PYTHON; then
+              echo "Running SAST scans (Flake8 & Bandit) for $SERVICE..."
+              # Install tools needed just for this step
+              pip install flake8 bandit
+              # Run flake8 - check Python style. Exit-zero ignores style errors for now.
+              flake8 $SERVICE_PATH/app --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics || echo "Flake8 found issues (non-blocking)."
+              # Run bandit - check Python security. -ll (medium confidence), -ii (medium severity). || true means don't fail pipeline on warnings.
+              bandit -r $SERVICE_PATH/app -ll -ii || echo "Bandit found issues (non-blocking)."
+            else
+               echo "Skipping Python SAST scans for $SERVICE..."
+            fi
+
+            # --- CI: Build Docker Image ---
+            echo "Building Docker image for $SERVICE..."
+            docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" "$SERVICE_PATH" -f "$SERVICE_PATH/Dockerfile"
+
+            # --- CI: Container Vulnerability Scanning (Trivy via Docker) - DevSecOps Gate ---
+            echo "Scanning image ${IMAGE_NAME}:${IMAGE_TAG} with Trivy..."
+            # Use docker run, mount the docker socket so trivy can see the host's docker images
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy:latest image \
+              --exit-code 1 \
+              --severity CRITICAL \
+              "${IMAGE_NAME}:${IMAGE_TAG}"
+            # If Trivy finds CRITICAL vulns, it exits 1, failing this step & the job.
+
+            # --- CI: Push Image to Google Artifact Registry ---
+            echo "Pushing image ${IMAGE_NAME}:${IMAGE_TAG} to GAR..."
+            docker push "${IMAGE_NAME}:${IMAGE_TAG}"
+
+            echo "--- Finished processing $SERVICE ---"
+          done
+
+  # --- JOB 2: Deploy to GKE ---
+  deploy-to-gke:
+    name: Deploy to GKE
+    needs: build-scan-push # IMPORTANT: This job only runs if build-scan-push SUCCEEDS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Get GKE Credentials
+        # This step configures kubectl to talk to your cluster
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GCP_REGION }}
+
+      - name: Prepare K8s Manifests (Replace Placeholders)
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          K8S_PATH="./k8s" # The folder where your Kubernetes YAMLs are
+
+          echo "Updating Kubernetes manifests in $K8S_PATH with Image Tag: $IMAGE_TAG"
+
+          # Check if the k8s directory exists, create if not (should exist from repo)
+          mkdir -p $K8S_PATH
+
+          # Loop through all .yaml files in the k8s directory
+          find "$K8S_PATH" -type f -name '*.yaml' -print0 | while IFS= read -r -d $'\0' file; do
+            echo "Processing $file..."
+            # Replace placeholder text with actual values using sed command
+            sed -i "s|PLACEHOLDER_TAG|${IMAGE_TAG}|g" "$file"
+            sed -i "s|PLACEHOLDER_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g" "$file"
+            sed -i "s|PLACEHOLDER_REGION|${{ env.GCP_REGION }}|g" "$file"
+
+            # Base64 encode secrets from GitHub Secrets (Kubernetes needs secrets base64 encoded)
+            DB_USER_B64=$(echo -n "${{ secrets.DB_USER }}" | base64)
+            DB_PASSWORD_B64=$(echo -n "${{ secrets.DB_PASSWORD }}" | base64)
+            GEMINI_API_KEY_B64=$(echo -n "${{ secrets.GEMINI_API_KEY }}" | base64)
+
+            # Inject Base64 encoded secrets into the specific K8s Secret files
+            # These placeholders MUST match exactly what's in your k8s secret YAMLs
+            sed -i "s|{{secrets.DB_USER}}|${DB_USER_B64}|g" "$file"
+            sed -i "s|{{secrets.DB_PASSWORD}}|${DB_PASSWORD_B64}|g" "$file"
+            sed -i "s|{{secrets.GEMINI_API_KEY}}|${GEMINI_API_KEY_B64}|g" "$file"
+
+          done
+          echo "Finished updating manifests."
+
+      - name: Deploy to GKE
+        run: |
+          echo "Applying Kubernetes manifests from $K8S_PATH..."
+          # Use kubectl to apply all the updated YAML files to your GKE cluster
+          kubectl apply -f "$K8S_PATH"
+          echo "Deployment initiated. Check GKE console for status."

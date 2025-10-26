@@ -1,0 +1,21 @@
+# 1. Kubernetes Service Account for Workload Identity (DB & Secret Access)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-workload-identity-sa # Renamed for clarity
+  # This annotation links the K8s SA to the GCP SA defined during IaC
+  annotations:
+    iam.gke.io/gcp-service-account: "terraform-sa@PLACEHOLDER_PROJECT_ID.iam.gserviceaccount.com"
+  namespace: default # Assuming deployment in the 'default' namespace
+
+---
+# 2. Kubernetes Secret structure to hold DB credentials (populated by pipeline)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+type: Opaque
+data:
+  # Pipeline will inject Base64 encoded secrets here using these keys
+  DB_USER: {{secrets.DB_USER}}
+  DB_PASSWORD: {{secrets.DB_PASSWORD}}

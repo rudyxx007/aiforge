@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aiforge-ingress
+  annotations:
+    # Use GKE's managed Ingress controller (creates GCP Load Balancer)
+    kubernetes.io/ingress.class: "gce"
+    # Optional: If you want to pre-reserve a static IP address using gcloud compute addresses create aiforge-static-ip --global
+    # kubernetes.io/ingress.global-static-ip-name: "aiforge-static-ip"
+    # Optional: If you set up Managed SSL Certificates in GCP
+    # networking.gke.io/managed-certificates: "aiforge-certificate"
+spec:
+  # Define default routing rules
+  defaultBackend:
+    service:
+      name: frontend-service # Traffic goes to the Kubernetes Service named "frontend-service"
+      port:
+        number: 80 # The port defined on the frontend-service (which targets container port 5000)

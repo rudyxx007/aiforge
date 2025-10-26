@@ -1,0 +1,47 @@
+# --- Frontend Service Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+  labels:
+    app: frontend-service
+spec:
+  replicas: 2 # Frontend can often handle more traffic
+  selector:
+    matchLabels:
+      app: frontend-service
+  template:
+    metadata:
+      labels:
+        app: frontend-service
+    spec:
+      containers:
+      - name: frontend-service
+        image: PLACEHOLDER_REGION-docker.pkg.dev/PLACEHOLDER_PROJECT_ID/aiforge-services/frontend-service:PLACEHOLDER_TAG
+        ports:
+        - containerPort: 5000 # Node.js server runs on 5000 internally
+        # No ENV vars needed unless made configurable
+        readinessProbe:
+          httpGet:
+            # Assumes your Node.js server serves the main page or a health check at root
+            path: /
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+---
+# --- Frontend Service (Type LoadBalancer for testing, or use Ingress) ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service # This name is used by the Ingress
+spec:
+  selector:
+    app: frontend-service
+  ports:
+    - protocol: TCP
+      port: 80 # External port the Ingress/LoadBalancer listens on
+      targetPort: 5000 # Forward to container port 5000
+  # TYPE: Using ClusterIP because Ingress will handle external traffic.
+  # If you wanted a direct GCP Load Balancer without Ingress, you'd use type: LoadBalancer
+  type: ClusterIP
