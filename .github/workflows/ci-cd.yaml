@@ -24,71 +24,77 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout Code (gets code into the runner's workspace)
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # 2. Authenticate to GCP using Workload Identity Federation (via Service Account Key)
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      # 3. Set up gcloud CLI tool
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      # 4. Configure Docker to authenticate with Google Artifact Registry
       - name: Configure Docker for GAR
         run: gcloud auth configure-docker ${{ env.GAR_LOCATION }} --quiet
 
+      # 5. Build, Scan, and Push each service's Docker Image
       - name: Build, Scan, Push Services
         run: |
-          IMAGE_TAG=${{ github.sha }} # Use unique commit hash as tag
+          IMAGE_TAG=${{ github.sha }} # Unique tag based on commit hash
 
+          # Loop through each service defined in SERVICE_NAMES
           for SERVICE in ${{ env.SERVICE_NAMES }}; do
             echo "--- Processing service: $SERVICE ---"
-            SERVICE_PATH="./services/$SERVICE"
-            IMAGE_NAME="${{ env.GAR_LOCATION }}/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/$SERVICE"
 
+            # --- Define explicit absolute paths using github.workspace ---
+            # ${{ github.workspace }} is the root directory where the code was checked out
+            SERVICE_PATH="${{ github.workspace }}/services/$SERVICE"
+            DOCKERFILE_PATH="${{ github.workspace }}/services/$SERVICE/Dockerfile"
+            BUILD_CONTEXT="${{ github.workspace }}/services/$SERVICE" # Directory containing Dockerfile and source
+            IMAGE_NAME="${{ env.GAR_LOCATION }}/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/$SERVICE"
+            # --- End path definition ---
+
+            # Check if it's a Python service based on requirements.txt
             IS_PYTHON=false
             if [[ -f "$SERVICE_PATH/requirements.txt" ]]; then
               IS_PYTHON=true
             fi
 
-            # --- CI: SAST ---
+            # --- CI: SAST (Static Application Security Testing) for Python ---
             if $IS_PYTHON; then
               echo "Running SAST scans (Flake8 & Bandit) for $SERVICE..."
-              # Install tools needed just for this step
-              pip install flake8 bandit
-              # Run flake8 - check Python style. Exit-zero ignores style errors for now.
+              pip install flake8 bandit # Install scanners
+              # Run Flake8 (style check) - allow to pass even with warnings
               flake8 $SERVICE_PATH/app --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics || echo "Flake8 found issues (non-blocking)."
-              # Run bandit - check Python security. -ll (medium confidence), -ii (medium severity). || true means don't fail pipeline on warnings.
+              # Run Bandit (security check) - allow to pass even with warnings
               bandit -r $SERVICE_PATH/app -ll -ii || echo "Bandit found issues (non-blocking)."
             else
                echo "Skipping Python SAST scans for $SERVICE..."
             fi
 
-            # --- Define explicit build paths ---
-            SERVICE_PATH="./services/$SERVICE"
-            DOCKERFILE_PATH="$SERVICE_PATH/Dockerfile"
-            BUILD_CONTEXT="./services/$SERVICE" # The directory containing Dockerfile and app/
-            IMAGE_NAME="${{ env.GAR_LOCATION }}/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/$SERVICE"
-
             # --- CI: Build Docker Image ---
             echo "Building Docker image for $SERVICE..."
-            
-            # Use the explicit context and Dockerfile path
+            # Use explicit Dockerfile path (-f) and build context path
             docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" \
               -f "${DOCKERFILE_PATH}" \
-              "${BUILD_CONTEXT}" # <--- Use the explicit context variable
+              "${BUILD_CONTEXT}"
 
             # --- CI: Container Vulnerability Scanning (Trivy via Docker) - DevSecOps Gate ---
             echo "Scanning image ${IMAGE_NAME}:${IMAGE_TAG} with Trivy..."
-            # Use docker run, mount the docker socket so trivy can see the host's docker images
+            # Run Trivy in a Docker container, mounting the host's Docker socket
+            # This allows Trivy inside its container to see the image just built by the runner
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
               aquasec/trivy:latest image \
               --exit-code 1 \
               --severity CRITICAL \
               "${IMAGE_NAME}:${IMAGE_TAG}"
-            # If Trivy finds CRITICAL vulns, it exits 1, failing this step & the job.
+            # If Trivy finds CRITICAL vulnerabilities, it exits with 1, failing this step.
 
             # --- CI: Push Image to Google Artifact Registry ---
             echo "Pushing image ${IMAGE_NAME}:${IMAGE_TAG} to GAR..."
@@ -100,50 +106,53 @@ jobs:
   # --- JOB 2: Deploy to GKE ---
   deploy-to-gke:
     name: Deploy to GKE
-    needs: build-scan-push # IMPORTANT: This job only runs if build-scan-push SUCCEEDS
+    needs: build-scan-push # Run only if the build/scan job succeeds
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout Code again (needed for Kubernetes manifests)
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # 2. Authenticate to GCP
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      # 3. Get GKE Credentials (configures kubectl)
       - name: Get GKE Credentials
-        # This step configures kubectl to talk to your cluster
         uses: google-github-actions/get-gke-credentials@v2
         with:
           cluster_name: ${{ env.GKE_CLUSTER }}
           location: ${{ env.GCP_REGION }}
 
-      - name: Prepare K8s Manifests (Replace Placeholders)
+      # 4. Prepare K8s Manifests (Replace Placeholders & Inject Secrets)
+      - name: Prepare K8s Manifests
         run: |
           IMAGE_TAG=${{ github.sha }}
-          K8S_PATH="./k8s" # The folder where your Kubernetes YAMLs are
+          K8S_PATH="${{ github.workspace }}/k8s" # Absolute path to k8s manifests
 
           echo "Updating Kubernetes manifests in $K8S_PATH with Image Tag: $IMAGE_TAG"
 
-          # Check if the k8s directory exists, create if not (should exist from repo)
+          # Ensure the k8s directory exists (should be checked out from repo)
           mkdir -p $K8S_PATH
 
           # Loop through all .yaml files in the k8s directory
           find "$K8S_PATH" -type f -name '*.yaml' -print0 | while IFS= read -r -d $'\0' file; do
             echo "Processing $file..."
-            # Replace placeholder text with actual values using sed command
+            # Replace basic placeholders
             sed -i "s|PLACEHOLDER_TAG|${IMAGE_TAG}|g" "$file"
             sed -i "s|PLACEHOLDER_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g" "$file"
             sed -i "s|PLACEHOLDER_REGION|${{ env.GCP_REGION }}|g" "$file"
 
-            # Base64 encode secrets from GitHub Secrets (Kubernetes needs secrets base64 encoded)
+            # Base64 encode secrets from GitHub Secrets (required by Kubernetes 'data' field)
             DB_USER_B64=$(echo -n "${{ secrets.DB_USER }}" | base64)
             DB_PASSWORD_B64=$(echo -n "${{ secrets.DB_PASSWORD }}" | base64)
             GEMINI_API_KEY_B64=$(echo -n "${{ secrets.GEMINI_API_KEY }}" | base64)
 
             # Inject Base64 encoded secrets into the specific K8s Secret files
-            # These placeholders MUST match exactly what's in your k8s secret YAMLs
+            # These placeholders MUST exactly match your secret YAML definitions
             sed -i "s|{{secrets.DB_USER}}|${DB_USER_B64}|g" "$file"
             sed -i "s|{{secrets.DB_PASSWORD}}|${DB_PASSWORD_B64}|g" "$file"
             sed -i "s|{{secrets.GEMINI_API_KEY}}|${GEMINI_API_KEY_B64}|g" "$file"
@@ -151,9 +160,10 @@ jobs:
           done
           echo "Finished updating manifests."
 
+      # 5. Deploy to GKE using kubectl apply
       - name: Deploy to GKE
         run: |
           echo "Applying Kubernetes manifests from $K8S_PATH..."
-          # Use kubectl to apply all the updated YAML files to your GKE cluster
+          # Apply all the updated YAML files found in the k8s directory
           kubectl apply -f "$K8S_PATH"
           echo "Deployment initiated. Check GKE console for status."
