@@ -14,7 +14,7 @@ env:
   GKE_CLUSTER: aiforge-cluster
   GAR_LOCATION: ${{ secrets.GCP_REGION }}-docker.pkg.dev
   GAR_REPOSITORY: aiforge-services
-  SERVICE_NAMES: "auth-service project-service ai-core-service analysis-service frontend-service"
+  SERVICE_NAMES: "auth-service project-service ai-core-service analysis-service frontend-dashboard-service"
 
 # --- JOBS ---
 jobs:
@@ -56,7 +56,7 @@ jobs:
           ls -la ${{ github.workspace }}/services
           echo "--- End listing services directory ---"
           # --- END DEBUG ---
-          
+
           IMAGE_TAG=${{ github.sha }} # Unique tag based on commit hash
 
           # Loop through each service defined in SERVICE_NAMES
