@@ -65,9 +65,19 @@ jobs:
                echo "Skipping Python SAST scans for $SERVICE..."
             fi
 
+            # --- Define explicit build paths ---
+            SERVICE_PATH="./services/$SERVICE"
+            DOCKERFILE_PATH="$SERVICE_PATH/Dockerfile"
+            BUILD_CONTEXT="./services/$SERVICE" # The directory containing Dockerfile and app/
+            IMAGE_NAME="${{ env.GAR_LOCATION }}/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/$SERVICE"
+
             # --- CI: Build Docker Image ---
             echo "Building Docker image for $SERVICE..."
-            docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" "$SERVICE_PATH" -f "$SERVICE_PATH/Dockerfile"
+            
+            # Use the explicit context and Dockerfile path
+            docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" \
+              -f "${DOCKERFILE_PATH}" \
+              "${BUILD_CONTEXT}" # <--- Use the explicit context variable
 
             # --- CI: Container Vulnerability Scanning (Trivy via Docker) - DevSecOps Gate ---
             echo "Scanning image ${IMAGE_NAME}:${IMAGE_TAG} with Trivy..."
