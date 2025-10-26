@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+pydantic
+flake8
+httpx

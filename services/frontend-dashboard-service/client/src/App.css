@@ -1,0 +1,45 @@
+.App {
+  text-align: center;
+}
+.App-header {
+  background-color: #282c34;
+  padding: 20px;
+  color: white;
+}
+.container {
+  display: flex;
+  flex-direction: row;
+  padding: 20px;
+}
+.panel {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ccc;
+  margin: 10px;
+  text-align: left;
+}
+pre {
+  background-color: #f4f4f4;
+  border: 1px solid #ddd;
+  padding: 10px;
+  white-space: pre-wrap; /* Wrap long lines */
+  word-wrap: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: monospace;
+}
+input {
+  width: 80%;
+  padding: 8px;
+  margin-right: 10px;
+}
+button {
+  padding: 8px 12px;
+  background-color: #61dafb;
+  border: none;
+  cursor: pointer;
+  font-weight: bold;
+}
+button:hover {
+  background-color: #4fa8c2;
+}
