@@ -1,4 +1,4 @@
-# --- Authentication Service Deployment ---
+# --- Authentication Service Deployment (Simplified) ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,7 +6,7 @@ metadata:
   labels:
     app: auth-service
 spec:
-  replicas: 1 # Start with 1 pod
+  replicas: 1
   selector:
     matchLabels:
       app: auth-service
@@ -15,61 +15,46 @@ spec:
       labels:
         app: auth-service
     spec:
-      # Use the K8s Service Account linked to GCP for Workload Identity
-      serviceAccountName: app-workload-identity-sa
+      # NOTE: No more serviceAccountName, no sidecar, no volumes
       containers:
-      # --- Main Auth Service Container ---
       - name: auth-service
         image: PLACEHOLDER_REGION-docker.pkg.dev/PLACEHOLDER_PROJECT_ID/aiforge-services/auth-service:PLACEHOLDER_TAG
         ports:
-        - containerPort: 8000 # The port the FastAPI app runs on
+        - containerPort: 8000
         env:
-        # Load DB Credentials from the K8s Secret
-        - name: DB_USER
+        # Load DB Credentials from the secret
+        - name: POSTGRES_USER
           valueFrom:
             secretKeyRef:
               name: db-credentials
               key: DB_USER
-        - name: DB_PASSWORD
+        - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
               name: db-credentials
               key: DB_PASSWORD
-        # DATABASE URL (connects via the proxy's Unix socket in the shared volume)
-        - name: DATABASE_URL
-          value: "postgresql+psycopg2://$(DB_USER):$(DB_PASSWORD)@/aiforge-main-db?host=/cloudsql/PLACEHOLDER_PROJECT_ID:PLACEHOLDER_REGION:aiforge-db-instance"
-        # Load JWT Secret Key (Hardcoded is fine for this project)
+        - name: POSTGRES_DB
+          value: "aiforge-main-db"
+          
+        # --- CRITICAL FIX ---
+        # Set DB_HOST for the wait.sh script and database.py
+        - name: DB_HOST
+          value: "postgres-gke-service" # This must match 00-postgres-service.yaml
+        # --- END CRITICAL FIX ---
+        
         - name: JWT_SECRET_KEY
-          value: "a-very-strong-and-long-secret-key-for-your-jwt-tokens"
+          value: "my-super-secret-random-key-for-jwt-32-chars-longer-is-better" # Make sure this is a strong, random string
         - name: ALGORITHM
           value: "HS256"
-        # Mount the shared volume for the Cloud SQL socket
-        volumeMounts:
-          - name: cloudsql-socket-volume
-            mountPath: /cloudsql
-            readOnly: false
-
-      # --- Cloud SQL Auth Proxy Sidecar Container ---
-      - name: cloudsql-proxy
-        image: gcr.io/cloudsql-docker/gce-proxy:latest
-        args:
-          - "--structured-logs"
-          - "--private-ip" # Connects securely via Private IP
-          - "--unix-socket=/cloudsql" # Creates socket in the shared volume
-          - "PLACEHOLDER_PROJECT_ID:PLACEHOLDER_REGION:aiforge-db-instance" # DB instance to connect to
-        securityContext:
-          runAsNonRoot: true # Security best practice
-        volumeMounts:
-          - name: cloudsql-socket-volume
-            mountPath: /cloudsql
-            readOnly: false
-
-      # Define the shared volume
-      volumes:
-        - name: cloudsql-socket-volume
-          emptyDir: {}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
 ---
-# --- Authentication Service ClusterIP (Internal DNS: "auth-service") ---
+# --- Authentication Service ClusterIP (Internal DNS Name: "auth-service") ---
 apiVersion: v1
 kind: Service
 metadata:
@@ -79,6 +64,6 @@ spec:
     app: auth-service
   ports:
     - protocol: TCP
-      port: 8000 # Service port matches the container port for simplicity
+      port: 80
       targetPort: 8000
-  type: ClusterIP # Only reachable inside the cluster
+  type: ClusterIP

@@ -1,0 +1,47 @@
+# This file creates the actual PostgreSQL database server pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-deployment
+  labels:
+    app: postgres-gke # Label to identify this deployment
+spec:
+  replicas: 1 # Run one instance of the database
+  selector:
+    matchLabels:
+      app: postgres-gke
+  template:
+    metadata:
+      labels:
+        app: postgres-gke
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:14-alpine # Use the same image as local
+          ports:
+            - containerPort: 5432
+          env:
+            # Load the username, password, and DB name from the K8s secret
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials # Must match 01-secrets.yaml
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials # Must match 01-secrets.yaml
+                  key: DB_PASSWORD
+            - name: POSTGRES_DB
+              value: "aiforge-main-db" # Same DB name as local
+            # Tell Postgres where to store its data within the container
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            # Mount the "virtual hard drive" (PVC) into the container
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc # Must match 00-postgres-pvc.yaml

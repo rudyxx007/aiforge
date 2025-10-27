@@ -11,41 +11,72 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    # No healthcheck here for now
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # --- 2. Auth Service (Python) ---
   auth-service:
     build: ./services/auth-service
     container_name: auth-service
     env_file: ./.env
-    depends_on: # Simplified depends_on
-      - postgres-db
-    # No healthcheck
+    environment: # <-- Provide DB_HOST for local environment
+      - DB_HOST=postgres-db
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   # --- 3. Project Service (Python) ---
   project-service:
     build: ./services/project-service
     container_name: project-service
     env_file: ./.env
-    depends_on: # Simplified depends_on
-      - postgres-db
-    # No healthcheck
+    environment: # <-- Provide DB_HOST for local environment
+      - DB_HOST=postgres-db
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   # --- 4. AI Core Service (Python) ---
   ai-core-service:
     build: ./services/ai-core-service
     container_name: ai-core-service
     env_file: ./.env
-    # No healthcheck
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   # --- 5. Analysis Service (Python) ---
   analysis-service:
     build: ./services/analysis-service
     container_name: analysis-service
     env_file: ./.env
-    depends_on: # Simplified depends_on
-      - ai-core-service
-    # No healthcheck
+    depends_on:
+      ai-core-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   # --- 6. Frontend Service (Node.js + React) ---
   frontend-service:
@@ -53,13 +84,16 @@ services:
     container_name: frontend-service
     env_file: ./.env
     ports:
-      - "3000:5000"
-    depends_on: # Simplified depends_on list
-      - auth-service
-      - project-service
-      - analysis-service
-      - ai-core-service
-    # No healthcheck
+      - "3000:5000" # Expose on http://localhost:3000
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      project-service:
+        condition: service_healthy
+      analysis-service:
+        condition: service_healthy
+      ai-core-service:
+        condition: service_healthy
 
 volumes:
   postgres_data:
