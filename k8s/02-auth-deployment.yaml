@@ -6,7 +6,7 @@ metadata:
   labels:
     app: auth-service
 spec:
-  replicas: 1 # Start with 1 replica, can be scaled later
+  replicas: 1 # Start with 1 pod
   selector:
     matchLabels:
       app: auth-service
@@ -15,15 +15,14 @@ spec:
       labels:
         app: auth-service
     spec:
-      # Use the K8s Service Account linked to GCP IAM via Workload Identity
+      # Use the K8s Service Account linked to GCP for Workload Identity
       serviceAccountName: app-workload-identity-sa
       containers:
       # --- Main Auth Service Container ---
       - name: auth-service
-        # Image will be dynamically set by the pipeline
         image: PLACEHOLDER_REGION-docker.pkg.dev/PLACEHOLDER_PROJECT_ID/aiforge-services/auth-service:PLACEHOLDER_TAG
         ports:
-        - containerPort: 8000 # The port the FastAPI app runs on inside the container
+        - containerPort: 8000 # The port the FastAPI app runs on
         env:
         # Load DB Credentials from the K8s Secret
         - name: DB_USER
@@ -36,61 +35,50 @@ spec:
             secretKeyRef:
               name: db-credentials
               key: DB_PASSWORD
-        # DATABASE URL for SQLAlchemy (Connects via Unix socket created by the proxy)
+        # DATABASE URL (connects via the proxy's Unix socket in the shared volume)
         - name: DATABASE_URL
           value: "postgresql+psycopg2://$(DB_USER):$(DB_PASSWORD)@/aiforge-main-db?host=/cloudsql/PLACEHOLDER_PROJECT_ID:PLACEHOLDER_REGION:aiforge-db-instance"
-        # Load JWT Secret Key (Ideally from a K8s secret, but keeping simple for now)
+        # Load JWT Secret Key (Hardcoded is fine for this project)
         - name: JWT_SECRET_KEY
-          value: "my-super-secret-random-key-for-jwt-32-chars-longer-is-better" # Replace with a strong random string or load from secret
+          value: "a-very-strong-and-long-secret-key-for-your-jwt-tokens"
         - name: ALGORITHM
           value: "HS256"
-        # Kubernetes Readiness Probe: Checks if the app is ready to serve traffic
-        readinessProbe:
-          httpGet:
-            path: /health # Your FastAPI app needs a /health endpoint
-            port: 8000
-          initialDelaySeconds: 15 # Wait a bit after start before checking
-          periodSeconds: 20 # Check every 20 seconds
-          timeoutSeconds: 5
         # Mount the shared volume for the Cloud SQL socket
-        volumeMounts:
-          - name: cloudsql-socket-volume
-            mountPath: /cloudsql
-            readOnly: false # Proxy needs write access
-
-      # --- Cloud SQL Auth Proxy Sidecar Container (Handles DB Connection) ---
-      - name: cloudsql-proxy
-        # Use the official Google Cloud SQL Proxy image
-        image: gcr.io/cloudsql-docker/gce-proxy:latest # Or pin to a specific version like 1.28.1
-        args:
-          # Connect via private IP using a Unix socket in the shared volume
-          - "--structured-logs"
-          - "--private-ip"
-          - "--unix-socket=/cloudsql"
-          - "PLACEHOLDER_PROJECT_ID:PLACEHOLDER_REGION:aiforge-db-instance" # DB Instance connection name from Terraform output
-        securityContext:
-          runAsNonRoot: true # Run proxy as non-root user for security
-        # Mount the shared volume
         volumeMounts:
           - name: cloudsql-socket-volume
             mountPath: /cloudsql
             readOnly: false
 
-      # Define the shared volume (an empty directory)
+      # --- Cloud SQL Auth Proxy Sidecar Container ---
+      - name: cloudsql-proxy
+        image: gcr.io/cloudsql-docker/gce-proxy:latest
+        args:
+          - "--structured-logs"
+          - "--private-ip" # Connects securely via Private IP
+          - "--unix-socket=/cloudsql" # Creates socket in the shared volume
+          - "PLACEHOLDER_PROJECT_ID:PLACEHOLDER_REGION:aiforge-db-instance" # DB instance to connect to
+        securityContext:
+          runAsNonRoot: true # Security best practice
+        volumeMounts:
+          - name: cloudsql-socket-volume
+            mountPath: /cloudsql
+            readOnly: false
+
+      # Define the shared volume
       volumes:
         - name: cloudsql-socket-volume
           emptyDir: {}
 ---
-# --- Authentication Service ClusterIP (Internal DNS Name: "auth-service") ---
+# --- Authentication Service ClusterIP (Internal DNS: "auth-service") ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: auth-service # This name is used by other services to connect
+  name: auth-service
 spec:
   selector:
-    app: auth-service # Selects pods with the 'app: auth-service' label
+    app: auth-service
   ports:
     - protocol: TCP
-      port: 80 # Standard internal port
-      targetPort: 8000 # Forward traffic to the container's port 8000
-  type: ClusterIP # Only accessible within the GKE cluster
+      port: 8000 # Service port matches the container port for simplicity
+      targetPort: 8000
+  type: ClusterIP # Only reachable inside the cluster

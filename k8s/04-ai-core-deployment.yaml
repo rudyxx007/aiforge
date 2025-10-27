@@ -15,7 +15,6 @@ spec:
       labels:
         app: ai-core-service
     spec:
-      # No special serviceAccount needed unless accessing other GCP APIs
       containers:
       - name: ai-core-service
         image: PLACEHOLDER_REGION-docker.pkg.dev/PLACEHOLDER_PROJECT_ID/aiforge-services/ai-core-service:PLACEHOLDER_TAG
@@ -26,17 +25,10 @@ spec:
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
-              name: gemini-api-key-secret # Matches the name in 01-ai-secret.yaml
-              key: GEMINI_API_KEY        # Matches the key within that secret
-        readinessProbe:
-          httpGet:
-            path: /health # Requires a /health endpoint in ai-core-service
-            port: 8000
-          initialDelaySeconds: 10
-          periodSeconds: 20
-          timeoutSeconds: 5
+              name: gemini-api-key-secret
+              key: GEMINI_API_KEY
 ---
-# --- AI Core Service ClusterIP (Internal DNS Name: "ai-core-service") ---
+# --- AI Core Service ClusterIP (Internal DNS: "ai-core-service") ---
 apiVersion: v1
 kind: Service
 metadata:
@@ -46,6 +38,6 @@ spec:
     app: ai-core-service
   ports:
     - protocol: TCP
-      port: 80
+      port: 8000 # Port 8000, as called by analysis-service
       targetPort: 8000
   type: ClusterIP

@@ -20,16 +20,9 @@ spec:
         image: PLACEHOLDER_REGION-docker.pkg.dev/PLACEHOLDER_PROJECT_ID/aiforge-services/analysis-service:PLACEHOLDER_TAG
         ports:
         - containerPort: 8000
-        # No special ENV needed unless you make AI_CORE_URL configurable
-        readinessProbe:
-          httpGet:
-            path: /health # Requires a /health endpoint in analysis-service
-            port: 8000
-          initialDelaySeconds: 10
-          periodSeconds: 20
-          timeoutSeconds: 5
+        # No extra ENV needed, it uses the K8s DNS name 'ai-core-service:8000'
 ---
-# --- Analysis Service ClusterIP (Internal DNS Name: "analysis-service") ---
+# --- Analysis Service ClusterIP (Internal DNS: "analysis-service") ---
 apiVersion: v1
 kind: Service
 metadata:
@@ -39,6 +32,6 @@ spec:
     app: analysis-service
   ports:
     - protocol: TCP
-      port: 80
+      port: 8000
       targetPort: 8000
   type: ClusterIP
