@@ -81,7 +81,6 @@ jobs:
 
             # --- CI: Container Vulnerability Scanning (Trivy via Docker) ---
             echo "Scanning image ${IMAGE_NAME}:${IMAGE_TAG} with Trivy..."
-            # --- CRITICAL FIX: Mount and use .trivyignore for risk acceptance ---
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
               -v ${{ github.workspace }}/.trivyignore:/.trivyignore \
@@ -90,7 +89,6 @@ jobs:
               --severity CRITICAL \
               --ignorefile /.trivyignore \
               "${IMAGE_NAME}:${IMAGE_TAG}"
-            # --- END CRITICAL FIX ---
 
             # --- CI: Push Image to GAR ---
             echo "Pushing image ${IMAGE_NAME}:${IMAGE_TAG} to GAR..."
@@ -104,6 +102,12 @@ jobs:
     name: Deploy to GKE
     needs: build-scan-push # Run only if build job succeeds
     runs-on: ubuntu-latest
+    
+    # --- CRITICAL FIX: DEFINE ENV VARS FOR THE *ENTIRE JOB* ---
+    env:
+      K8S_PATH: "./k8s" # Now $K8S_PATH is available in all steps below
+      IMAGE_TAG: ${{ github.sha }} # Now $IMAGE_TAG is available in all steps below
+    # --- END FIX ---
 
     steps:
       # 1. Checkout Code
@@ -126,9 +130,7 @@ jobs:
       # 4. Prepare K8s Manifests
       - name: Prepare K8s Manifests
         run: |
-          IMAGE_TAG=${{ github.sha }}
-          K8S_PATH="./k8s" 
-
+          # These variables are now available from the job's 'env:' block
           echo "Updating Kubernetes manifests in $K8S_PATH with Image Tag: $IMAGE_TAG"
           mkdir -p $K8S_PATH 
 
@@ -151,6 +153,7 @@ jobs:
       # 5. Deploy to GKE
       - name: Deploy to GKE
         run: |
+          # This $K8S_PATH variable will now be correctly populated
           echo "Applying Kubernetes manifests from $K8S_PATH..."
           kubectl apply -f "$K8S_PATH"
           echo "Deployment initiated. Check GKE console for status."
