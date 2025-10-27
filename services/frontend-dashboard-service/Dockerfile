@@ -1,25 +1,12 @@
 # --- Stage 1: Build the React App ---
 FROM node:18-alpine AS builder
-
-WORKDIR /app
-# Copy React app's package.json first
-COPY client/package.json client/package-lock.json ./client/
-
-# Install React dependencies
-RUN cd client && npm install
-
-# Copy the rest of the React app source code
-COPY client/ ./client/
-
-# Build the static React app
+# ... (rest of Stage 1 is unchanged) ...
 RUN cd client && npm run build
 
-# --- Stage 2: Build the Node.js Server (Final Image) ---
+# --- Stage 2: Build the Node.js Server ---
 FROM node:18-slim
 
-# --- FIX: PATCH BASE IMAGE VULNERABILITIES ---
-# Run update and upgrade to pull in any available security patches 
-# for base packages like zlib1g. This is the cleaner DevSecOps fix.
+# --- ADD THIS BLOCK TO PATCH VULNERABILITIES ---
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 # --- END FIX ---
 
