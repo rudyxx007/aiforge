@@ -1,0 +1,4 @@
+# Acknowledged OS-level vulnerability in zlib1g.
+# Status is 'will_not_fix' by the Debian package maintainer for this base image.
+# Accepting this risk to proceed with deployment.
+CVE-2023-45853
