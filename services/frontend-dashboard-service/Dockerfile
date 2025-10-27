@@ -20,7 +20,7 @@ RUN cd client && npm run build
 
 # --- Stage 2: Build the Node.js Server (Final Image) ---
 # This stage takes the built React files and pairs them with the Node.js proxy server.
-FROM node:18-slim
+FROM node:20-slim
 
 # --- FIX: PATCH BASE IMAGE VULNERABILITIES (Solution 1) ---
 # Run apt-get update and upgrade to patch OS-level CVEs like the zlib1g one.
