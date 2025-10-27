@@ -1,20 +1,29 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
+from contextlib import asynccontextmanager
+
 from . import models, schemas, auth
-from .database import engine, Base, get_db
+from .database import engine, get_db, Base
 
-# This creates the "projects" table in the database
-models.Base.metadata.create_all(bind=engine)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Application startup... creating database tables.")
+    Base.metadata.create_all(bind=engine)
+    yield
+    print("Application shutdown...")
 
-app = FastAPI(title="Project Service")
+app = FastAPI(title="Project Service", lifespan=lifespan)
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "service": "project-service"}
 
 @app.post("/projects", response_model=schemas.Project)
 def create_project(
-    project: schemas.ProjectCreate, 
-    db: Session = Depends(get_db), 
-    token_data: auth.TokenData = Depends(auth.get_current_user)
+    project: schemas.ProjectCreate,
+    db: Session = Depends(get_db),
+    token_data: auth.TokenData = Depends(auth.get_current_user),
 ):
-    # The owner_id comes from the validated token
     db_project = models.Project(**project.dict(), owner_id=token_data.user_id)
     db.add(db_project)
     db.commit()
@@ -23,9 +32,9 @@ def create_project(
 
 @app.get("/projects", response_model=list[schemas.Project])
 def get_user_projects(
-    db: Session = Depends(get_db), 
-    token_data: auth.TokenData = Depends(auth.get_current_user)
+    db: Session = Depends(get_db),
+    token_data: auth.TokenData = Depends(auth.get_current_user),
 ):
-    # Only return projects owned by the user in the token
     projects = db.query(models.Project).filter(models.Project.owner_id == token_data.user_id).all()
     return projects
+
